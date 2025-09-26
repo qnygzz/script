@@ -1,0 +1,47 @@
+-- Beta Panel Key + HWID Script
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+-- Function to generate HWID (simple example)
+local function getHWID()
+    local hwid = tostring(game:GetService("RbxAnalyticsService"):GetClientId())
+    return hwid
+end
+
+-- API URL for verification
+local verify_url = "http://localhost:3000/verify" -- replace with your hosted URL
+
+-- Verify key + HWID
+local function verifyKey()
+    local hwid = getHWID()
+    local data = {
+        key = getgenv().key,
+        hwid = hwid
+    }
+
+    local success, res = pcall(function()
+        return HttpService:PostAsync(verify_url, HttpService:JSONEncode(data), Enum.HttpContentType.ApplicationJson)
+    end)
+
+    if not success then
+        warn("Failed to contact API")
+        return false
+    end
+
+    local response = HttpService:JSONDecode(res)
+
+    if response.success then
+        print("✅ Key verified:", response.msg)
+        return true
+    else
+        warn("❌ Verification failed:", response.msg)
+        Players.LocalPlayer:Kick(response.msg)
+        return false
+    end
+end
+
+-- Run verification
+verifyKey()
+
+-- Optional: print that script executed
+print("🚀 Beta Panel script executed")
