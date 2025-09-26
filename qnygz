@@ -1,47 +1,87 @@
--- Beta Panel Key + HWID Script
+-- Qnygz v2 - Key + HWID verifier (copy/paste into your executor)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
--- Function to generate HWID (simple example)
-local function getHWID()
-    local hwid = tostring(game:GetService("RbxAnalyticsService"):GetClientId())
-    return hwid
+-- ===== CONFIG =====
+local VERIFY_URL = "https://replit.com/@kamilpc2012/roblox/verify" -- your provided URL (replace if needed)
+
+-- file to persist HWID locally (optional; will be used if exploit supports writefile/readfile)
+local HWID_FILE = "qnygz_hwid.txt"
+
+-- ===== Helpers =====
+local function try(call, ...)
+    local ok, res = pcall(call, ...)
+    return ok, res
 end
 
--- API URL for verification
-local verify_url = "http://localhost:3000/verify" -- replace with your hosted URL
+-- persistent HWID: try to read existing, otherwise generate and save
+local function loadOrCreateHWID()
+    local isfile = isfile
+    local readfile = readfile
+    local writefile = writefile
 
--- Verify key + HWID
-local function verifyKey()
-    local hwid = getHWID()
-    local data = {
-        key = getgenv().key,
-        hwid = hwid
-    }
+    if type(isfile) == "function" and type(readfile) == "function" and type(writefile) == "function" then
+        local ok, exists = pcall(isfile, HWID_FILE)
+        if ok and exists then
+            local ok2, stored = pcall(readfile, HWID_FILE)
+            if ok2 and stored and #stored > 0 then
+                return stored
+            end
+        end
 
-    local success, res = pcall(function()
-        return HttpService:PostAsync(verify_url, HttpService:JSONEncode(data), Enum.HttpContentType.ApplicationJson)
-    end)
-
-    if not success then
-        warn("Failed to contact API")
-        return false
-    end
-
-    local response = HttpService:JSONDecode(res)
-
-    if response.success then
-        print("✅ Key verified:", response.msg)
-        return true
+        local newhwid = tostring(LocalPlayer.UserId) .. "-" .. HttpService:GenerateGUID(false)
+        pcall(writefile, HWID_FILE, newhwid)
+        return newhwid
     else
-        warn("❌ Verification failed:", response.msg)
-        Players.LocalPlayer:Kick(response.msg)
-        return false
+        return tostring(LocalPlayer.UserId) .. "-" .. HttpService:GenerateGUID(false)
     end
 end
 
--- Run verification
-verifyKey()
+local function postVerify(key, hwid)
+    local payload = HttpService:JSONEncode({ key = key, hwid = hwid })
+    local ok, res = pcall(function()
+        return HttpService:PostAsync(VERIFY_URL, payload, Enum.HttpContentType.ApplicationJson)
+    end)
+    if not ok then
+        return false, "Could not contact verify server (network/HttpService error)"
+    end
 
--- Optional: print that script executed
-print("🚀 Beta Panel script executed")
+    local decoded
+    local ok2, err = pcall(function() decoded = HttpService:JSONDecode(res) end)
+    if not ok2 then
+        return false, "Invalid response from server"
+    end
+
+    return true, decoded
+end
+
+-- ===== Main =====
+if not getgenv().key or #tostring(getgenv().key) < 1 then
+    warn("Qnygz: No key detected in getgenv().key. Paste your key or use the bot 'Get Script' button.")
+    return
+end
+
+local key = tostring(getgenv().key)
+local hwid = loadOrCreateHWID()
+
+print(("Qnygz: Verifying key %s with HWID %s"):format(key, hwid))
+
+local ok, resultOrMsg = postVerify(key, hwid)
+if not ok then
+    warn("Qnygz: "..tostring(resultOrMsg))
+    return
+end
+
+local res = resultOrMsg
+if res.success then
+    print("✅ Qnygz: Verification success - "..tostring(res.msg))
+    print("🚀 Qnygz executor running")
+else
+    local msg = tostring(res.msg or "Verification failed")
+    if msg:lower():find("hwid") or msg:lower():find("mismatch") then
+        pcall(function() LocalPlayer:Kick("HWID locked to someone else — "..msg) end)
+    else
+        pcall(function() LocalPlayer:Kick(msg) end)
+    end
+end
