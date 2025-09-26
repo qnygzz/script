@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 -- ===== CONFIG =====
-local VERIFY_URL = "https://replit.com/@kamilpc2012/roblox/verify" -- your provided URL (replace if needed)
+local VERIFY_URL = "local VERIFY_URL = "https://roblox.kamilpc2012.repl.co/verify"" -- your provided URL (replace if needed)
 
 -- base filename (we will append executor id)
 local HWID_FILE_BASE = "qnygz_hwid"
