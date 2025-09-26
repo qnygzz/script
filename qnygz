@@ -1,4 +1,4 @@
--- Qnygz v2 - Key + HWID verifier (copy/paste into your executor)
+-- Qnygz v2 - Key + HWID verifier (per-executor HWID file)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -6,35 +6,71 @@ local LocalPlayer = Players.LocalPlayer
 -- ===== CONFIG =====
 local VERIFY_URL = "https://replit.com/@kamilpc2012/roblox/verify" -- your provided URL (replace if needed)
 
--- file to persist HWID locally (optional; will be used if exploit supports writefile/readfile)
-local HWID_FILE = "qnygz_hwid.txt"
+-- base filename (we will append executor id)
+local HWID_FILE_BASE = "qnygz_hwid"
 
 -- ===== Helpers =====
-local function try(call, ...)
-    local ok, res = pcall(call, ...)
-    return ok, res
+local function safe_call(fn, ...)
+    if type(fn) ~= "function" then return nil end
+    local ok, res = pcall(fn, ...)
+    if ok then return res end
+    return nil
 end
 
--- persistent HWID: try to read existing, otherwise generate and save
-local function loadOrCreateHWID()
-    local isfile = isfile
-    local readfile = readfile
-    local writefile = writefile
+-- Attempt to detect executor id/name using common funcs
+local function detect_executor_id()
+    local candidate = nil
 
-    if type(isfile) == "function" and type(readfile) == "function" and type(writefile) == "function" then
-        local ok, exists = pcall(isfile, HWID_FILE)
+    candidate = candidate or safe_call(function() return _G and _G.identifyexecutor and _G.identifyexecutor() end)
+    candidate = candidate or safe_call(identifyexecutor)
+    candidate = candidate or safe_call(getexecutor)
+    candidate = candidate or (type(syn) == "table" and safe_call(function() return syn.getexecutor and syn.getexecutor() end))
+    candidate = candidate or safe_call(function() if type(_G)=="table" and _G.get_executor then return _G.get_executor() end end)
+
+    if type(candidate) == "table" then
+        local s = ""
+        for k,v in pairs(candidate) do s = s .. tostring(k) .. "=" .. tostring(v) .. ";" end
+        candidate = s
+    end
+
+    if type(candidate) == "string" and #candidate > 0 then
+        return candidate
+    end
+
+    return "generic"
+end
+
+-- sanitize a string to be safe for filenames
+local function sanitize_filename(s)
+    s = tostring(s):gsub("[^%w%-_]", "") -- keep letters, numbers, dash, underscore
+    if s == "" then s = "unknown" end
+    return s
+end
+
+-- persistent HWID per-executor: choose filename that includes executor id
+local function loadOrCreateHWID()
+    local executor_id = detect_executor_id()
+    local safe_exec = sanitize_filename(executor_id)
+    local HWID_FILE = HWID_FILE_BASE .. "_" .. safe_exec .. ".txt"
+
+    local isfile_f = isfile
+    local readfile_f = readfile
+    local writefile_f = writefile
+
+    if type(isfile_f) == "function" and type(readfile_f) == "function" and type(writefile_f) == "function" then
+        local ok, exists = pcall(isfile_f, HWID_FILE)
         if ok and exists then
-            local ok2, stored = pcall(readfile, HWID_FILE)
+            local ok2, stored = pcall(readfile_f, HWID_FILE)
             if ok2 and stored and #stored > 0 then
                 return stored
             end
         end
 
-        local newhwid = tostring(LocalPlayer.UserId) .. "-" .. HttpService:GenerateGUID(false)
-        pcall(writefile, HWID_FILE, newhwid)
+        local newhwid = tostring(LocalPlayer.UserId) .. "-" .. safe_exec .. "-" .. HttpService:GenerateGUID(false)
+        pcall(writefile_f, HWID_FILE, newhwid)
         return newhwid
     else
-        return tostring(LocalPlayer.UserId) .. "-" .. HttpService:GenerateGUID(false)
+        return tostring(LocalPlayer.UserId) .. "-" .. safe_exec .. "-" .. HttpService:GenerateGUID(false)
     end
 end
 
@@ -79,8 +115,9 @@ if res.success then
     print("🚀 Qnygz executor running")
 else
     local msg = tostring(res.msg or "Verification failed")
-    if msg:lower():find("hwid") or msg:lower():find("mismatch") then
-        pcall(function() LocalPlayer:Kick("HWID locked to someone else — "..msg) end)
+    if msg:lower():find("hwid") or msg:lower():find("mismatch") or msg:lower():find("locked") then
+        local kickMsg = "HWID is linked to another executor — " .. msg
+        pcall(function() LocalPlayer:Kick(kickMsg) end)
     else
         pcall(function() LocalPlayer:Kick(msg) end)
     end
