@@ -1,10 +1,9 @@
 --[[
     Linoria-style UI Library (Complete)
-    Features:
-    - Window, Tabs, Groupboxes (left/right/tabbox)
-    - Toggle, Slider, Dropdown, KeyPicker, ColorPicker, Input, Button, Label, Divider
-    - Dependency boxes, Notifications, Watermark, Keybind list
-    - Theme manager, Save manager (needs executor file support)
+    Features: Window, Tabs, Groupboxes, Toggles, Sliders, Dropdowns,
+    ColorPickers, KeyPickers, Inputs, Buttons, Labels, Dividers,
+    Dependency boxes, Notifications, Watermark, Keybind list,
+    Theme manager, Save manager (needs executor file support)
     Fully self-contained – copy-paste and upload to GitHub.
 --]]
 
