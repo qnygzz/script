@@ -1,15 +1,7 @@
 --[[
     Custom UI Library (Linoria-like)
-    Features:
-    - Window, Tabs, Groupboxes (left/right/tabbox)
-    - Toggle, Slider, Dropdown, ColorPicker, KeyPicker, Input, Button, Label, Divider
-    - Dependency system (hide/show based on toggle)
-    - Notification system
-    - Full HSV color picker with sliders and preview
-    - Keybind recorder
-    - Theme manager (basic)
-    - Save manager (needs executor file support)
-    Fully self-contained, ready to use.
+    Now with: Watermark, Keybind List (draggable, toggleable, themeable)
+    Fully self-contained – paste on GitHub and load.
 --]]
 
 -- Services
@@ -19,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- ------------------------------------------------------------------
 -- Library core table
@@ -43,6 +36,8 @@ local Library = {
     KeyRecorderActive = false,
     KeyRecorderCallback = nil,
     Notifications = {},
+    Watermark = nil,
+    KeybindList = nil,
 }
 
 -- Utility functions
@@ -129,7 +124,6 @@ function Library:Notify(text, duration)
         Parent = notif
     })
 
-    -- Auto-destroy after duration
     task.delay(duration, function()
         if notif and notif.Parent then
             notif:TweenPosition(UDim2.new(1, 10, 0, 0), "Out", "Quad", 0.3, true, function()
@@ -138,7 +132,6 @@ function Library:Notify(text, duration)
         end
     end)
 
-    -- Slide in animation
     notif.Position = UDim2.new(1, 10, 0, 0)
     notif:TweenPosition(UDim2.new(0, 0, 0, 0), "Out", "Quad", 0.3, true)
 end
@@ -277,7 +270,7 @@ function ColorPicker:Open(parent)
     local function createSlider(label, min, max, default, callback)
         local container = Library:Create("Frame", {
             Size = UDim2.new(1, -20, 0, 40),
-            Position = UDim2.new(0, 10, 0, 100 + (#label * 45)),
+            Position = UDim2.new(0, 10, 0, 100 + (string.byte(label) * 0.5)), -- rough positioning
             BackgroundTransparency = 1,
             Parent = frame,
             ZIndex = 203
@@ -490,7 +483,6 @@ function Toggle:AddKeyPicker(settings)
         Text = settings.Text or "",
         Mode = settings.Mode or "Toggle",
         Callback = function(key)
-            -- When key pressed, toggle
             if settings.Mode == "Toggle" then
                 self:SetValue(not self.Value)
             elseif settings.Mode == "Hold" then
@@ -503,7 +495,6 @@ function Toggle:AddKeyPicker(settings)
 end
 
 function Toggle:AddColorPicker(settings)
-    -- Add a color picker button next to toggle
     local btn = Library:Create("TextButton", {
         Size = UDim2.new(0, 20, 0, 20),
         BackgroundColor3 = settings.Default or Color3.new(1,1,1),
@@ -699,11 +690,9 @@ function Dropdown.new(parent, settings)
 end
 
 function Dropdown:RefreshDropdown()
-    -- Clear existing buttons
     for _, child in ipairs(self.DropdownFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
-    -- Create buttons for each value
     for _, val in ipairs(self.Values) do
         local btn = Library:Create("TextButton", {
             Size = UDim2.new(1, 0, 0, 20),
@@ -717,7 +706,6 @@ function Dropdown:RefreshDropdown()
         })
         btn.MouseButton1Click:Connect(function()
             if self.Multi then
-                -- Toggle in table
                 if self.Value[val] then
                     self.Value[val] = nil
                 else
@@ -733,7 +721,6 @@ function Dropdown:RefreshDropdown()
             pcall(self.Callback, self.Value)
         end)
     end
-    -- Adjust frame size
     self.DropdownFrame.Size = UDim2.new(0,120,0, math.min(#self.Values * 22, 150))
 end
 
@@ -747,7 +734,7 @@ function KeyPicker.new(parent, settings)
     local self = setmetatable({}, KeyPicker)
     self.Flag = settings.Flag or ("key_"..tostring(math.random(1,999999)))
     self.Text = settings.Text or ""
-    self.Mode = settings.Mode or "Toggle"  -- Toggle, Hold, Always
+    self.Mode = settings.Mode or "Toggle"
     self.Default = settings.Default or nil
     self.Callback = settings.Callback or function() end
     self.Parent = parent
@@ -1047,7 +1034,6 @@ function Groupbox:AddDivider(settings)
 end
 
 function Groupbox:AddDependencyBox()
-    -- Creates a container that can be shown/hidden based on dependencies
     local depBox = Library:Create("Frame", {
         Size = UDim2.new(1, -10, 0, 0),
         BackgroundTransparency = 1,
@@ -1130,7 +1116,6 @@ function Tab:AddRightGroupbox(name)
 end
 
 function Tab:AddLeftTabbox()
-    -- Creates a frame that holds two tabbed groupboxes side by side (simplified)
     local container = Library:Create("Frame", {
         Size = UDim2.new(0.5, -10, 0, 200),
         BackgroundTransparency = 1,
@@ -1286,7 +1271,163 @@ function Window:SelectTab(tab)
 end
 
 -- ------------------------------------------------------------------
--- Save Manager (simple)
+-- Watermark and Keybind List
+-- ------------------------------------------------------------------
+function Library:CreateWatermark()
+    if self.Watermark and self.Watermark.Visible then return end
+    local gui = self.CurrentMenu.GUI
+    local watermark = Library:Create("Frame", {
+        Name = "Watermark",
+        Size = UDim2.new(0, 200, 0, 30),
+        Position = UDim2.new(0, 10, 0, 10),
+        BackgroundColor3 = self.Theme.Background,
+        BorderSizePixel = 0,
+        Parent = gui,
+        ZIndex = 50
+    })
+    local corner = Library:Create("UICorner", {CornerRadius = UDim.new(0, 4), Parent = watermark})
+    local stroke = Library:Create("UIStroke", {Thickness = 1, Color = self.Theme.Accent, Parent = watermark})
+
+    local text = Library:Create("TextLabel", {
+        Size = UDim2.new(1, -10, 1, 0),
+        Position = UDim2.new(0, 5, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "My Script | 60 FPS",
+        TextColor3 = self.Theme.Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = watermark
+    })
+
+    -- Make draggable
+    local dragging = false
+    watermark.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    watermark.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local newPos = UDim2.new(0, watermark.AbsolutePosition.X + input.Delta.X, 0, watermark.AbsolutePosition.Y + input.Delta.Y)
+            watermark.Position = newPos
+        end
+    end)
+
+    -- Update FPS
+    local lastTick = tick()
+    local frames = 0
+    self:AddConnection(RunService.RenderStepped, function()
+        frames = frames + 1
+        if tick() - lastTick >= 1 then
+            text.Text = string.format("My Script | %d FPS", frames)
+            frames = 0
+            lastTick = tick()
+        end
+    end)
+
+    self.Watermark = watermark
+    return watermark
+end
+
+function Library:CreateKeybindList()
+    if self.KeybindList and self.KeybindList.Visible then return end
+    local gui = self.CurrentMenu.GUI
+    local list = Library:Create("Frame", {
+        Name = "KeybindList",
+        Size = UDim2.new(0, 200, 0, 150),
+        Position = UDim2.new(1, -210, 0, 10),
+        BackgroundColor3 = self.Theme.Background,
+        BorderSizePixel = 0,
+        Parent = gui,
+        ZIndex = 50
+    })
+    local corner = Library:Create("UICorner", {CornerRadius = UDim.new(0, 4), Parent = list})
+    local stroke = Library:Create("UIStroke", {Thickness = 1, Color = self.Theme.Accent, Parent = list})
+
+    local title = Library:Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 25),
+        BackgroundColor3 = self.Theme.Topbar,
+        BorderSizePixel = 0,
+        Text = "Keybinds",
+        TextColor3 = self.Theme.Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        Parent = list
+    })
+
+    local content = Library:Create("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, -25),
+        Position = UDim2.new(0, 0, 0, 25),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        Parent = list,
+        CanvasSize = UDim2.new(0,0,0,0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y
+    })
+
+    local layout = Library:Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        HorizontalAlignment = Enum.HorizontalAlignment.Left,
+        VerticalAlignment = Enum.VerticalAlignment.Top,
+        Padding = UDim.new(0, 2),
+        Parent = content
+    })
+
+    -- Make draggable
+    local dragging = false
+    list.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    list.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local newPos = UDim2.new(0, list.AbsolutePosition.X + input.Delta.X, 0, list.AbsolutePosition.Y + input.Delta.Y)
+            list.Position = newPos
+        end
+    end)
+
+    -- Function to refresh list
+    function list:Refresh()
+        for _, child in ipairs(content:GetChildren()) do
+            if child:IsA("TextLabel") then child:Destroy() end
+        end
+        for flag, key in pairs(Library.Flags) do
+            if typeof(key) == "EnumItem" and key ~= Enum.KeyCode.Unknown then
+                local label = Library:Create("TextLabel", {
+                    Size = UDim2.new(1, -5, 0, 18),
+                    BackgroundTransparency = 1,
+                    Text = flag .. ": " .. key.Name,
+                    TextColor3 = Library.Theme.Text,
+                    Font = Enum.Font.Gotham,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent = content
+                })
+            end
+        end
+        content.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 5)
+    end
+
+    list.Refresh(list)
+    self.KeybindList = list
+    return list
+end
+
+-- ------------------------------------------------------------------
+-- Save Manager
 -- ------------------------------------------------------------------
 local SaveManager = {}
 SaveManager.__index = SaveManager
@@ -1307,6 +1448,7 @@ function SaveManager:SaveConfig(name)
     local json = HttpService:JSONEncode(data)
     if writefile then
         writefile(self.Folder .. "/" .. name .. ".json", json)
+        Library:Notify("Config saved", 2)
     else
         Library:Notify("writefile not supported", 2)
     end
@@ -1319,7 +1461,7 @@ function SaveManager:LoadConfig(name)
         local data = HttpService:JSONDecode(json)
         for flag, value in pairs(data) do
             Library.Flags[flag] = value
-            -- Find element and update UI (not implemented here)
+            -- Note: UI updates would require element references; simplified
         end
         Library:Notify("Config loaded", 2)
     else
@@ -1328,7 +1470,7 @@ function SaveManager:LoadConfig(name)
 end
 
 -- ------------------------------------------------------------------
--- Theme Manager (minimal)
+-- Theme Manager
 -- ------------------------------------------------------------------
 local ThemeManager = {}
 ThemeManager.__index = ThemeManager
@@ -1342,14 +1484,13 @@ function ThemeManager:SetFolder(folder)
 end
 
 function ThemeManager:ApplyToTab(tab)
-    -- Add theme controls to the tab
     local group = tab:AddLeftGroupbox("Theme")
     group:AddButton({Text = "Light Theme", Func = function()
         Library.Theme.Background = Color3.fromRGB(240,240,240)
         Library.Theme.Topbar = Color3.fromRGB(220,220,220)
         Library.Theme.Element = Color3.fromRGB(200,200,200)
         Library.Theme.Text = Color3.new(0,0,0)
-        -- In a full implementation, refresh UI colors
+        -- Refresh UI colors (simplified – you'd need to update all elements)
     end})
     group:AddButton({Text = "Dark Theme", Func = function()
         Library.Theme.Background = Color3.fromRGB(25,25,25)
@@ -1373,119 +1514,9 @@ Library.Label = Label
 Library.Divider = Divider
 Library.SaveManager = SaveManager
 Library.ThemeManager = ThemeManager
-Library.Notify = Library.Notify -- already defined
+Library.Notify = Library.Notify
 
 -- ------------------------------------------------------------------
--- Example Usage (uncomment to test)
+-- Return the library
 -- ------------------------------------------------------------------
---[[
-local Window = Library:CreateWindow({
-    Title = "My Awesome Script",
-    Center = true,
-    Size = UDim2.new(0, 700, 0, 500)
-})
-
-local Tabs = {
-    Main = Window:AddTab("Main"),
-    Combat = Window:AddTab("Combat"),
-    Visuals = Window:AddTab("Visuals"),
-    Settings = Window:AddTab("Settings")
-}
-
--- Main tab
-local left = Tabs.Main:AddLeftGroupbox("Main Features")
-local right = Tabs.Main:AddRightGroupbox("Extra")
-
-left:AddToggle({
-    Flag = "toggle1",
-    Text = "Enable Feature",
-    Default = true,
-    Callback = function(v) print("Toggle:", v) end
-}):AddKeyPicker({Text = "F"})
-
-left:AddSlider({
-    Flag = "slider1",
-    Text = "Speed",
-    Default = 50,
-    Min = 0,
-    Max = 100,
-    Rounding = 0,
-    Suffix = "%",
-    Callback = function(v) print("Speed:", v) end
-})
-
-left:AddDropdown({
-    Flag = "dropdown1",
-    Text = "Mode",
-    Values = {"Easy", "Medium", "Hard"},
-    Default = "Medium",
-    Callback = function(v) print("Mode:", v) end
-})
-
-left:AddInput({
-    Flag = "input1",
-    Text = "Name",
-    Placeholder = "Enter name",
-    Callback = function(v) print("Name:", v) end
-})
-
-left:AddButton({
-    Text = "Click Me",
-    Func = function() print("Button clicked") end
-})
-
-left:AddLabel({Text = "This is a label"})
-left:AddDivider({Text = "Section"})
-
-right:AddToggle({
-    Flag = "toggle2",
-    Text = "Another Toggle",
-    Default = false,
-    Callback = function(v) print("Toggle2:", v) end
-})
-
--- Dependency example
-local depToggle = left:AddToggle({
-    Flag = "depToggle",
-    Text = "Show Extra Options",
-    Default = false
-})
-
-local depBox = left:AddDependencyBox()
-depBox:AddToggle({Flag = "subToggle", Text = "Sub Option", Default = false})
-depBox:AddSlider({Flag = "subSlider", Text = "Sub Slider", Default = 10, Min=0, Max=100})
-
-depToggle:SetValue(false)
-depToggle.Callback = function(val)
-    depBox.Frame.Visible = val
-end
-
--- Settings tab for theme/save
-local themeGroup = Tabs.Settings:AddLeftGroupbox("Theme")
-themeGroup:AddButton({Text = "Apply Dark", Func = function()
-    Library.Theme.Background = Color3.fromRGB(25,25,25)
-    Library.Theme.Topbar = Color3.fromRGB(20,20,20)
-    Library.Theme.Element = Color3.fromRGB(45,45,45)
-    Library.Theme.Text = Color3.new(1,1,1)
-end})
-themeGroup:AddButton({Text = "Apply Light", Func = function()
-    Library.Theme.Background = Color3.fromRGB(240,240,240)
-    Library.Theme.Topbar = Color3.fromRGB(220,220,220)
-    Library.Theme.Element = Color3.fromRGB(200,200,200)
-    Library.Theme.Text = Color3.new(0,0,0)
-end})
-
-local saveGroup = Tabs.Settings:AddRightGroupbox("Save/Load")
-saveGroup:AddButton({Text = "Save Config", Func = function()
-    Library.SaveManager:SaveConfig("config1")
-end})
-saveGroup:AddButton({Text = "Load Config", Func = function()
-    Library.SaveManager:LoadConfig("config1")
-end})
-
--- Test notification
-task.wait(1)
-Library:Notify("Welcome to the script!", 3)
---]]
-
 return Library
