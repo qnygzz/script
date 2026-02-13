@@ -1,9 +1,15 @@
 --[[
     Custom UI Library (Linoria-like)
-    Features: Window, Tabs, Groupboxes, Toggles, Sliders, Dropdowns,
-    ColorPickers, KeyPickers, Inputs, Buttons, Labels, Dividers,
-    Dependency system, Theme manager, Save manager.
-    Fully self-contained, copy-paste ready.
+    Features:
+    - Window, Tabs, Groupboxes (left/right/tabbox)
+    - Toggle, Slider, Dropdown, ColorPicker, KeyPicker, Input, Button, Label, Divider
+    - Dependency system (hide/show based on toggle)
+    - Notification system
+    - Full HSV color picker with sliders and preview
+    - Keybind recorder
+    - Theme manager (basic)
+    - Save manager (needs executor file support)
+    Fully self-contained, ready to use.
 --]]
 
 -- Services
@@ -18,9 +24,9 @@ local LocalPlayer = Players.LocalPlayer
 -- Library core table
 -- ------------------------------------------------------------------
 local Library = {
-    Flags = {},                 -- All element values stored here
-    Connections = {},           -- For cleanup on unload
-    Tabs = {},                  -- List of tabs
+    Flags = {},
+    Connections = {},
+    Tabs = {},
     ActiveTab = nil,
     Theme = {
         Background = Color3.fromRGB(25, 25, 25),
@@ -31,11 +37,12 @@ local Library = {
         Shadow = Color3.fromRGB(0, 0, 0),
         Danger = Color3.fromRGB(255, 50, 50),
     },
-    Options = {},               -- For save manager
+    Options = {},
     Unloaded = false,
-    CurrentMenu = nil,          -- Window instance
+    CurrentMenu = nil,
     KeyRecorderActive = false,
     KeyRecorderCallback = nil,
+    Notifications = {},
 }
 
 -- Utility functions
@@ -69,6 +76,71 @@ function Library:Unload()
     self.Flags = {}
     self.Tabs = {}
     self.Options = {}
+end
+
+-- ------------------------------------------------------------------
+-- Notification System
+-- ------------------------------------------------------------------
+function Library:Notify(text, duration)
+    duration = duration or 3
+    if not self.CurrentMenu then return end
+    local gui = self.CurrentMenu.GUI
+    if not gui then return end
+
+    local notifHolder = gui:FindFirstChild("NotificationHolder")
+    if not notifHolder then
+        notifHolder = Library:Create("Frame", {
+            Name = "NotificationHolder",
+            Size = UDim2.new(0, 300, 0, 0),
+            Position = UDim2.new(1, -310, 0, 10),
+            BackgroundTransparency = 1,
+            Parent = gui,
+            ZIndex = 100
+        })
+        local layout = Library:Create("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+            Padding = UDim.new(0, 5),
+            Parent = notifHolder
+        })
+    end
+
+    local notif = Library:Create("Frame", {
+        Size = UDim2.new(0, 300, 0, 40),
+        BackgroundColor3 = self.Theme.Background,
+        BorderSizePixel = 0,
+        Parent = notifHolder,
+        ZIndex = 101
+    })
+
+    local corner = Library:Create("UICorner", {CornerRadius = UDim.new(0, 4), Parent = notif})
+    local stroke = Library:Create("UIStroke", {Thickness = 1, Color = self.Theme.Accent, Parent = notif})
+
+    local label = Library:Create("TextLabel", {
+        Size = UDim2.new(1, -20, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = text,
+        TextColor3 = self.Theme.Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextWrapped = true,
+        Parent = notif
+    })
+
+    -- Auto-destroy after duration
+    task.delay(duration, function()
+        if notif and notif.Parent then
+            notif:TweenPosition(UDim2.new(1, 10, 0, 0), "Out", "Quad", 0.3, true, function()
+                notif:Destroy()
+            end)
+        end
+    end)
+
+    -- Slide in animation
+    notif.Position = UDim2.new(1, 10, 0, 0)
+    notif:TweenPosition(UDim2.new(0, 0, 0, 0), "Out", "Quad", 0.3, true)
 end
 
 -- ------------------------------------------------------------------
@@ -109,7 +181,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- ------------------------------------------------------------------
--- ColorPicker popup
+-- ColorPicker popup (HSV sliders)
 -- ------------------------------------------------------------------
 local ColorPicker = {}
 ColorPicker.__index = ColorPicker
@@ -123,6 +195,15 @@ function ColorPicker.new(title, defaultColor, callback)
     return self
 end
 
+function ColorPicker:RGBToHSV(color)
+    local h, s, v = color:ToHSV()
+    return h * 360, s * 100, v * 100
+end
+
+function ColorPicker:HSVToRGB(h, s, v)
+    return Color3.fromHSV(h/360, s/100, v/100)
+end
+
 function ColorPicker:Open(parent)
     if self.Open then return end
     self.Open = true
@@ -134,16 +215,16 @@ function ColorPicker:Open(parent)
         BackgroundTransparency = 0.5,
         Active = true,
         Parent = gui,
-        ZIndex = 10
+        ZIndex = 200
     })
 
     local frame = Library:Create("Frame", {
-        Size = UDim2.new(0,300,0,300),
-        Position = UDim2.new(0.5,-150,0.5,-150),
+        Size = UDim2.new(0, 300, 0, 350),
+        Position = UDim2.new(0.5, -150, 0.5, -175),
         BackgroundColor3 = Library.Theme.Background,
         BorderSizePixel = 0,
         Parent = overlay,
-        ZIndex = 11
+        ZIndex = 201
     })
 
     local titleBar = Library:Create("Frame", {
@@ -151,7 +232,7 @@ function ColorPicker:Open(parent)
         BackgroundColor3 = Library.Theme.Topbar,
         BorderSizePixel = 0,
         Parent = frame,
-        ZIndex = 12
+        ZIndex = 202
     })
 
     local titleLabel = Library:Create("TextLabel", {
@@ -164,7 +245,7 @@ function ColorPicker:Open(parent)
         TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = titleBar,
-        ZIndex = 13
+        ZIndex = 203
     })
 
     local closeBtn = Library:Create("TextButton", {
@@ -177,31 +258,116 @@ function ColorPicker:Open(parent)
         Font = Enum.Font.Gotham,
         TextSize = 16,
         Parent = titleBar,
-        ZIndex = 13
+        ZIndex = 203
     })
 
-    -- Color preview and sliders would go here (simplified for brevity)
-    -- In a full implementation, we'd add HSV sliders and a preview.
-    -- For this example, we'll just have a close button and a simple color pick via dropdown.
-
-    -- (Simplified: just close and set a random color for demo)
-    local colorBtn = Library:Create("TextButton", {
-        Size = UDim2.new(0,100,0,30),
-        Position = UDim2.new(0.5,-50,0.5,-15),
-        BackgroundColor3 = Library.Theme.Element,
-        Text = "Set Red",
-        TextColor3 = Library.Theme.Text,
-        Font = Enum.Font.Gotham,
-        TextSize = 14,
+    -- Color preview
+    local preview = Library:Create("Frame", {
+        Size = UDim2.new(0, 50, 0, 50),
+        Position = UDim2.new(0, 10, 0, 40),
+        BackgroundColor3 = self.Color,
+        BorderSizePixel = 0,
         Parent = frame,
-        ZIndex = 13
+        ZIndex = 203
     })
 
-    colorBtn.MouseButton1Click:Connect(function()
-        self.Color = Color3.new(1,0,0)
+    -- HSV sliders
+    local hVal, sVal, vVal = self:RGBToHSV(self.Color)
+
+    local function createSlider(label, min, max, default, callback)
+        local container = Library:Create("Frame", {
+            Size = UDim2.new(1, -20, 0, 40),
+            Position = UDim2.new(0, 10, 0, 100 + (#label * 45)),
+            BackgroundTransparency = 1,
+            Parent = frame,
+            ZIndex = 203
+        })
+
+        local lbl = Library:Create("TextLabel", {
+            Size = UDim2.new(0, 30, 0, 20),
+            BackgroundTransparency = 1,
+            Text = label,
+            TextColor3 = Library.Theme.Text,
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+            Parent = container
+        })
+
+        local valueLbl = Library:Create("TextLabel", {
+            Size = UDim2.new(0, 40, 0, 20),
+            Position = UDim2.new(1, -40, 0, 0),
+            BackgroundTransparency = 1,
+            Text = tostring(default),
+            TextColor3 = Library.Theme.Text,
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = container
+        })
+
+        local bg = Library:Create("Frame", {
+            Size = UDim2.new(1, -80, 0, 10),
+            Position = UDim2.new(0, 30, 0, 20),
+            BackgroundColor3 = Library.Theme.Element,
+            BorderSizePixel = 0,
+            Parent = container
+        })
+
+        local fill = Library:Create("Frame", {
+            Size = UDim2.new((default-min)/(max-min), 0, 1, 0),
+            BackgroundColor3 = Library.Theme.Accent,
+            BorderSizePixel = 0,
+            Parent = bg
+        })
+
+        local dragging = false
+        bg.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+            end
+        end)
+        bg.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local mousePos = UserInputService:GetMouseLocation()
+                local absPos = bg.AbsolutePosition
+                local absSize = bg.AbsoluteSize.X
+                local rel = math.clamp((mousePos.X - absPos.X) / absSize, 0, 1)
+                local val = min + (max - min) * rel
+                val = Library:Round(val, 0)
+                fill.Size = UDim2.new(rel, 0, 1, 0)
+                valueLbl.Text = tostring(val)
+                callback(val)
+            end
+        end)
+
+        return container
+    end
+
+    -- Sliders for H, S, V
+    createSlider("H", 0, 360, hVal, function(val)
+        hVal = val
+        self.Color = self:HSVToRGB(hVal, sVal, vVal)
+        preview.BackgroundColor3 = self.Color
         if self.Callback then self.Callback(self.Color) end
-        overlay:Destroy()
-        self.Open = false
+    end)
+
+    createSlider("S", 0, 100, sVal, function(val)
+        sVal = val
+        self.Color = self:HSVToRGB(hVal, sVal, vVal)
+        preview.BackgroundColor3 = self.Color
+        if self.Callback then self.Callback(self.Color) end
+    end)
+
+    createSlider("V", 0, 100, vVal, function(val)
+        vVal = val
+        self.Color = self:HSVToRGB(hVal, sVal, vVal)
+        preview.BackgroundColor3 = self.Color
+        if self.Callback then self.Callback(self.Color) end
     end)
 
     closeBtn.MouseButton1Click:Connect(function()
@@ -337,8 +503,7 @@ function Toggle:AddKeyPicker(settings)
 end
 
 function Toggle:AddColorPicker(settings)
-    -- Not typical for toggle, but we can add it as a child element
-    -- We'll create a small button that opens color picker
+    -- Add a color picker button next to toggle
     local btn = Library:Create("TextButton", {
         Size = UDim2.new(0, 20, 0, 20),
         BackgroundColor3 = settings.Default or Color3.new(1,1,1),
@@ -902,7 +1067,11 @@ function Groupbox:AddDependencyBox()
         Elements = {},
         AddToggle = function(_, s) local t = Toggle.new({Content=depBox}, s); table.insert(box.Elements, t); return t end,
         AddSlider = function(_, s) local sl = Slider.new({Content=depBox}, s); table.insert(box.Elements, sl); return sl end,
-        -- Add other methods similarly
+        AddDropdown = function(_, s) local dd = Dropdown.new({Content=depBox}, s); table.insert(box.Elements, dd); return dd end,
+        AddInput = function(_, s) local inp = Input.new({Content=depBox}, s); table.insert(box.Elements, inp); return inp end,
+        AddButton = function(_, s) local btn = Button.new({Content=depBox}, s); table.insert(box.Elements, btn); return btn end,
+        AddLabel = function(_, s) local lbl = Label.new({Content=depBox}, s); table.insert(box.Elements, lbl); return lbl end,
+        AddDivider = function(_, s) local div = Divider.new({Content=depBox}, s); table.insert(box.Elements, div); return div end,
     }
     return box
 end
@@ -961,8 +1130,7 @@ function Tab:AddRightGroupbox(name)
 end
 
 function Tab:AddLeftTabbox()
-    -- Creates a frame that holds two tabbed groupboxes side by side (not fully implemented for brevity)
-    -- For simplicity, we'll just return a table with AddTab method returning a groupbox
+    -- Creates a frame that holds two tabbed groupboxes side by side (simplified)
     local container = Library:Create("Frame", {
         Size = UDim2.new(0.5, -10, 0, 200),
         BackgroundTransparency = 1,
@@ -1137,18 +1305,25 @@ function SaveManager:SaveConfig(name)
         data[flag] = value
     end
     local json = HttpService:JSONEncode(data)
-    writefile(self.Folder .. "/" .. name .. ".json", json)  -- requires executor with file functions
+    if writefile then
+        writefile(self.Folder .. "/" .. name .. ".json", json)
+    else
+        Library:Notify("writefile not supported", 2)
+    end
 end
 
 function SaveManager:LoadConfig(name)
     local file = self.Folder .. "/" .. name .. ".json"
-    if isfile(file) then
+    if isfile and isfile(file) then
         local json = readfile(file)
         local data = HttpService:JSONDecode(json)
         for flag, value in pairs(data) do
             Library.Flags[flag] = value
             -- Find element and update UI (not implemented here)
         end
+        Library:Notify("Config loaded", 2)
+    else
+        Library:Notify("Config not found", 2)
     end
 end
 
@@ -1174,7 +1349,7 @@ function ThemeManager:ApplyToTab(tab)
         Library.Theme.Topbar = Color3.fromRGB(220,220,220)
         Library.Theme.Element = Color3.fromRGB(200,200,200)
         Library.Theme.Text = Color3.new(0,0,0)
-        -- Update UI (would need to refresh all elements)
+        -- In a full implementation, refresh UI colors
     end})
     group:AddButton({Text = "Dark Theme", Func = function()
         Library.Theme.Background = Color3.fromRGB(25,25,25)
@@ -1198,6 +1373,7 @@ Library.Label = Label
 Library.Divider = Divider
 Library.SaveManager = SaveManager
 Library.ThemeManager = ThemeManager
+Library.Notify = Library.Notify -- already defined
 
 -- ------------------------------------------------------------------
 -- Example Usage (uncomment to test)
@@ -1279,8 +1455,7 @@ local depBox = left:AddDependencyBox()
 depBox:AddToggle({Flag = "subToggle", Text = "Sub Option", Default = false})
 depBox:AddSlider({Flag = "subSlider", Text = "Sub Slider", Default = 10, Min=0, Max=100})
 
--- Update dependency visibility based on depToggle
-depToggle:SetValue(false) -- initial
+depToggle:SetValue(false)
 depToggle.Callback = function(val)
     depBox.Frame.Visible = val
 end
@@ -1302,19 +1477,15 @@ end})
 
 local saveGroup = Tabs.Settings:AddRightGroupbox("Save/Load")
 saveGroup:AddButton({Text = "Save Config", Func = function()
-    print("Saving config...")
-    -- SaveManager would be used here
+    Library.SaveManager:SaveConfig("config1")
 end})
 saveGroup:AddButton({Text = "Load Config", Func = function()
-    print("Loading config...")
+    Library.SaveManager:LoadConfig("config1")
 end})
 
--- Initialize
-Library.SaveManager:SetLibrary(Library)
-Library.SaveManager:SetFolder("MyScript")
-Library.ThemeManager:SetLibrary(Library)
-Library.ThemeManager:SetFolder("MyScript")
+-- Test notification
+task.wait(1)
+Library:Notify("Welcome to the script!", 3)
 --]]
 
--- Return the library
 return Library
